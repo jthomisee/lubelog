@@ -2183,6 +2183,7 @@ function bindTabEvents(tab) {
         case "servicerecord-tab":
             checkQueryParams('#serviceRecordModalContent', showEditServiceRecordModal, 'id');
             checkQueryParams('#serviceRecordModalContent', showAddServiceRecordModal, 'add');
+            checkQueryParams('#serviceRecordModalContent', (reminderRecordId) => logRecordForReminder('ServiceRecord', reminderRecordId), 'logreminder');
             setupEventHub(`vehicleId_${GetVehicleId().vehicleId}`, getVehicleServiceRecords, GetVehicleId().vehicleId);
             break;
         case "notes-tab":
@@ -2198,11 +2199,13 @@ function bindTabEvents(tab) {
         case "accident-tab":
             checkQueryParams('#collisionRecordModalContent', showEditCollisionRecordModal, 'id');
             checkQueryParams('#collisionRecordModalContent', showAddCollisionRecordModal, 'add');
+            checkQueryParams('#collisionRecordModalContent', (reminderRecordId) => logRecordForReminder('RepairRecord', reminderRecordId), 'logreminder');
             setupEventHub(`vehicleId_${GetVehicleId().vehicleId}`, getVehicleCollisionRecords, GetVehicleId().vehicleId);
             break;
         case "tax-tab":
             checkQueryParams('#taxRecordModalContent', showEditTaxRecordModal, 'id');
             checkQueryParams('#taxRecordModalContent', showAddTaxRecordModal, 'add');
+            checkQueryParams('#taxRecordModalContent', (reminderRecordId) => logRecordForReminder('TaxRecord', reminderRecordId), 'logreminder');
             setupEventHub(`vehicleId_${GetVehicleId().vehicleId}`, getVehicleTaxRecords, GetVehicleId().vehicleId);
             break;
         case "report-tab":
@@ -2224,6 +2227,7 @@ function bindTabEvents(tab) {
         case "upgrade-tab":
             checkQueryParams('#upgradeRecordModalContent', showEditUpgradeRecordModal, 'id');
             checkQueryParams('#upgradeRecordModalContent', showAddUpgradeRecordModal, 'add');
+            checkQueryParams('#upgradeRecordModalContent', (reminderRecordId) => logRecordForReminder('UpgradeRecord', reminderRecordId), 'logreminder');
             setupEventHub(`vehicleId_${GetVehicleId().vehicleId}`, getVehicleUpgradeRecords, GetVehicleId().vehicleId);
             break;
         case "supply-tab":
@@ -2340,4 +2344,69 @@ function hideActiveModal() {
     if (activeModal.length > 0) {
         activeModal.modal('hide');
     }
+}
+//record types that can be logged from a reminder's done prompt
+var reminderLogRecordTypes = {
+    ServiceRecord: { label: 'Log a Service Record', tab: 'servicerecord', modal: '#serviceRecordModal', showAdd: 'showAddServiceRecordModal', description: '#serviceRecordDescription', odometer: 'serviceRecordMileage' },
+    RepairRecord: { label: 'Log a Repair', tab: 'accident', modal: '#collisionRecordModal', showAdd: 'showAddCollisionRecordModal', description: '#collisionRecordDescription', odometer: 'collisionRecordMileage' },
+    UpgradeRecord: { label: 'Log an Upgrade', tab: 'upgrade', modal: '#upgradeRecordModal', showAdd: 'showAddUpgradeRecordModal', description: '#upgradeRecordDescription', odometer: 'upgradeRecordMileage' },
+    TaxRecord: { label: 'Log a Tax Record', tab: 'tax', modal: '#taxRecordModal', showAdd: 'showAddTaxRecordModal', description: '#taxRecordDescription', odometer: '' }
+};
+function promptReminderDone(reminderRecordId, onMarkedDone) {
+    $.get(`/Vehicle/GetReminderRecordDoneOptions?reminderRecordId=${reminderRecordId}`, function (doneOptions) {
+        if (!doneOptions.success) {
+            errorToast(doneOptions.message);
+            return;
+        }
+        let inputOptions = { MarkDone: 'Just mark as done' };
+        doneOptions.additionalData.recordTypes.forEach(x => {
+            if (reminderLogRecordTypes[x] != undefined) {
+                inputOptions[x] = reminderLogRecordTypes[x].label;
+            }
+        });
+        Swal.fire({
+            title: 'Mark Reminder as Done',
+            text: doneOptions.additionalData.description,
+            input: 'select',
+            inputOptions: inputOptions,
+            inputValue: 'MarkDone',
+            showCancelButton: true,
+            confirmButtonText: 'Continue'
+        }).then(function (result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+            if (result.value == 'MarkDone') {
+                $.post(`/Vehicle/PushbackRecurringReminderRecord?reminderRecordId=${reminderRecordId}`, function (data) {
+                    if (data.success) {
+                        successToast("Reminder Updated");
+                        onMarkedDone();
+                    } else {
+                        errorToast(data.message);
+                    }
+                });
+            } else {
+                //open the vehicle's add dialog for the selected record type with the reminder linked
+                window.location.href = `/Vehicle/Index?vehicleId=${doneOptions.additionalData.vehicleId}&tab=${reminderLogRecordTypes[result.value].tab}&logreminder=${reminderRecordId}`;
+            }
+        });
+    });
+}
+function logRecordForReminder(recordType, reminderRecordId) {
+    let recordConfig = reminderLogRecordTypes[recordType];
+    $.get(`/Vehicle/GetReminderRecordDoneOptions?reminderRecordId=${reminderRecordId}`, function (doneOptions) {
+        if (!doneOptions.success) {
+            errorToast(doneOptions.message);
+            return;
+        }
+        $(recordConfig.modal).one('shown.bs.modal', function () {
+            //the add dialog resets its linked reminders when it loads, so link the reminder once it is shown
+            recurringReminderRecordId = [parseInt(reminderRecordId)];
+            $(recordConfig.description).val(doneOptions.additionalData.description);
+            if (recordConfig.odometer != '' && $(`#${recordConfig.odometer}`).val() == '') {
+                setLastOdometer(recordConfig.odometer);
+            }
+        });
+        window[recordConfig.showAdd]();
+    });
 }

@@ -122,15 +122,9 @@ function generateReminderItem(id, urgency, description) {
 }
 function markDoneCalendarReminderRecord(reminderRecordId, e) {
     event.stopPropagation();
-    $.post(`/Vehicle/PushbackRecurringReminderRecord?reminderRecordId=${reminderRecordId}`, function (data) {
-        if (data.success) {
-            hideCalendarReminderModal();
-            successToast("Reminder Updated");
-            reloadReminderView();
-        } else {
-            errorToast(data.message);
-        }
-    });
+    //close the reminder dialog so the done prompt isn't stacked on top of it
+    hideCalendarReminderModal();
+    promptReminderDone(reminderRecordId, reloadReminderView);
 }
 function deleteCalendarReminderRecord(reminderRecordId, e) {
     if (e != undefined) {

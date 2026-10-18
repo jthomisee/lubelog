@@ -175,14 +175,7 @@ function enableRecurring() {
 function markDoneReminderRecord(reminderRecordId, e) {
     event.stopPropagation();
     var vehicleId = GetVehicleId().vehicleId;
-    $.post(`/Vehicle/PushbackRecurringReminderRecord?reminderRecordId=${reminderRecordId}`, function (data) {
-        if (data.success) {
-            successToast("Reminder Updated");
-            getVehicleReminders(vehicleId);
-        } else {
-            errorToast(data.message);
-        }
-    });
+    promptReminderDone(reminderRecordId, () => getVehicleReminders(vehicleId));
 }
 
 function getAndValidateReminderRecordValues() {

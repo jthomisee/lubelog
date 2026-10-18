@@ -72,8 +72,36 @@ namespace CarCareTracker.Controllers
         [HttpPost]
         public IActionResult PushbackRecurringReminderRecord(int reminderRecordId)
         {
-            var result = PushbackRecurringReminderRecordWithChecks(reminderRecordId, null, null);
+            //count the next interval from today and the current odometer, reminders with fixed intervals ignore these and count from their previous target
+            var existingReminder = _reminderRecordDataAccess.GetReminderRecordById(reminderRecordId);
+            int? currentMileage = null;
+            if (existingReminder is not null && existingReminder.Id != default)
+            {
+                var maxMileage = _vehicleLogic.GetMaxMileage(existingReminder.VehicleId);
+                //without any odometer readings, keep counting from the previous target instead of from zero
+                currentMileage = maxMileage == default ? null : maxMileage;
+            }
+            var result = PushbackRecurringReminderRecordWithChecks(reminderRecordId, DateTime.Now.Date, currentMileage);
             return Json(result);
+        }
+        [HttpGet]
+        public IActionResult GetReminderRecordDoneOptions(int reminderRecordId)
+        {
+            var existingReminder = _reminderRecordDataAccess.GetReminderRecordById(reminderRecordId);
+            if (existingReminder is null || existingReminder.Id == default)
+            {
+                return Json(OperationResponse.Failed("Unable to find reminder"));
+            }
+            if (!_userLogic.UserCanEditVehicle(GetUserID(), existingReminder.VehicleId, HouseholdPermission.Edit))
+            {
+                return Json(OperationResponse.Failed("Access Denied"));
+            }
+            //record types that can be linked to a reminder, limited to the tabs the user has visible
+            var visibleTabs = _config.GetUserConfig(User).VisibleTabs;
+            var recordTypes = new List<ImportMode> { ImportMode.ServiceRecord, ImportMode.RepairRecord, ImportMode.UpgradeRecord, ImportMode.TaxRecord }
+                .Where(x => visibleTabs.Contains(x))
+                .Select(x => x.ToString());
+            return Json(OperationResponse.Succeed(string.Empty, new { vehicleId = existingReminder.VehicleId, description = existingReminder.Description, recordTypes }));
         }
         private OperationResponse PushbackRecurringReminderRecordWithChecks(int reminderRecordId, DateTime? currentDate, int? currentMileage)
         {
